@@ -120,6 +120,78 @@ def generate_mahjong_wall():
 # ==============================================================================
 # 分析ロジック
 # ==============================================================================
+FULL_DECK_INT_34 = sum([[i] * 4 for i in range(34)], [])
+
+def analyze_composition_monte_carlo(observed_counts: list, total_tiles: int, n_sims: int = 1000):
+    """
+    モンテカルロ法を用いて、観測された牌構成の偏り（経験的p値）を評価する。
+
+    Args:
+        observed_counts (list): 実際に観測された34種の牌のカウントリスト。
+        total_tiles (int): 観測された牌の合計枚数 (例: 31)。
+        n_sims (int): シミュレーションの繰り返し回数。
+
+    Returns:
+        dict: {'p_empirical': 経験的p値}
+    """
+    if sum(observed_counts) != total_tiles:
+        return {'p_empirical': None, 'error': '観測カウントと合計牌数が一致しません'}
+
+    # 1. 期待度数の計算
+    # 完全にランダムな場合、各牌の期待枚数を計算
+    expected_counts = np.full(34, total_tiles * (4 / 136))
+    
+    # 2. 実際に観測されたデータのカイ二乗値（χ²値）を計算
+    # この値が、観測データの「偏りの大きさ」を示す
+    try:
+        chi2_observed, _ = chisquare(f_obs=observed_counts, f_exp=expected_counts)
+    except ValueError:
+        return {'p_empirical': None, 'error': 'カイ二乗値の計算中にエラーが発生しました'}
+
+    # 3. モンテカルロシミュレーションを実行
+    simulated_chi2_values = []
+    for _ in range(n_sims):
+        # ランダムなサンプルをデッキから抽出
+        sample_indices = random.sample(range(136), total_tiles)
+        sample_tiles = [FULL_DECK_INT_34[i] for i in sample_indices]
+        
+        # サンプルの観測度数を計算
+        simulated_obs = [0] * 34
+        for tile_idx in sample_tiles:
+            simulated_obs[tile_idx] += 1
+        
+        # シミュレーションサンプルのカイ二乗値を計算
+        chi2_sim, _ = chisquare(f_obs=simulated_obs, f_exp=expected_counts)
+        simulated_chi2_values.append(chi2_sim)
+        
+    # 4. 経験的p値を計算
+    # 観測されたカイ二乗値が、シミュレーションで得られた多数のカイ二乗値と比べて
+    # どのくらい極端な値だったのかを割合で示す
+    p_empirical = np.sum(np.array(simulated_chi2_values) >= chi2_observed) / n_sims
+
+    return {'p_empirical': p_empirical}
+
+def calculate_cramers_v(observed_counts: list, expected_counts: list) -> float:
+    """
+    観測度数と期待度数からクラメールのVを算出する。
+    値は0（関連なし）から1（完全な関連）の範囲。
+    """
+    if sum(observed_counts) == 0:
+        return 0.0
+        
+    # カイ二乗値を計算
+    chi2, _ = chisquare(f_obs=observed_counts, f_exp=expected_counts)
+    n = sum(observed_counts)
+    
+    # 自由度 (k-1)
+    dof = len(observed_counts) - 1
+    if dof == 0:
+        return 0.0
+        
+    # クラメールのVを計算
+    v = np.sqrt(chi2 / (n * dof))
+    return v
+
 def analyze_conditional_entropy(player_sequence: list[int]):
     """
     プレイヤーに渡った牌のシーケンス（例：配牌13枚＋ツモ18枚）を受け取り、
@@ -496,7 +568,11 @@ def analyze_hand_drawn_tile(row_index,wall_ints,analyze_str):
          p_value = verify_odd_even_bias(player_draw_int)
          entropy_result = analyze_conditional_entropy(player_hand_draws_int)
          markov_result = analyze_markov_chain(player_hand_draws_int)
-         effective_tile_result = analyze_effective_tiles(player_hand_int, player_draw_int, wall_after_haipai)
+         obs_counts = convert_tile_counts_34([to_str(t) for t in player_hand_draws_int])
+         exp_counts = [len(player_hand_draws_int) * (4 / 136)] * 34
+         comp_res = analyze_composition_monte_carlo(obs_counts, len(player_hand_draws_int))
+         comp_res['cramers_v'] = calculate_cramers_v(obs_counts, exp_counts)
+         #effective_tile_result = analyze_effective_tiles(player_hand_int, player_draw_int, wall_after_haipai)
           
          analyzed_results.append({
              "index":            row_index,
@@ -505,8 +581,8 @@ def analyze_hand_drawn_tile(row_index,wall_ints,analyze_str):
              "p_empirical":      p_empirical,
              "p_value":          p_value,
              "entropy":          entropy_result,
-             "markov":           markov_result
-             #"effective_tiles":  effective_tile_result
+             "markov":           markov_result,
+             "cramers_v":        comp_res['cramers_v']
          })
 
     return analyzed_results
@@ -547,22 +623,60 @@ def generate_summary_report(all_game_results: list, alpha: float = 0.05):
     flat_results = [item for sublist in all_game_results for item in sublist]
     df = pd.DataFrame(flat_results)
 
-    # 各検定のp値を抽出し、有意な偏り（アノマリー）があったかを判定
-    df['p_runs_val'] = pd.to_numeric(df['p_runs'], errors='coerce')
-    df['p_markov_val'] = df['markov'].apply(lambda x: x.get('p_value') if isinstance(x, dict) else np.nan)
-    df['p_comp_val'] = pd.to_numeric(df['p_empirical'], errors='coerce') # 構成の偏りは経験的p値を使用
+    p_value_source_map = {
+        'p_runs': 'p_runs_val',
+        'p_empirical': 'p_comp_val'
+    }
+    for source_col, target_col in p_value_source_map.items():
+        if source_col in df.columns:
+            df[target_col] = pd.to_numeric(df[source_col], errors='coerce')
+        else:
+            df[target_col] = np.nan # 列が存在しない場合はNaNで作成
 
-    df['runs_anomaly'] = df['p_runs_val'] < alpha
+    # 辞書型の'markov'列も同様に安全に処理
+    if 'markov' in df.columns:
+        # .get()を使い、キーが存在しなくてもエラーにならないようにする
+        df['p_markov_val'] = df['markov'].apply(
+            lambda x: x.get('p_value') if isinstance(x, dict) else np.nan
+        ).astype(float)
+    else:
+        df['p_markov_val'] = np.nan
+
+    # ——————————————
+    # FDR補正をかけて、補正後も有意だったかのフラグ列を作成
+    from statsmodels.stats.multitest import multipletests
+
+    df = apply_fdr_correction(df, alpha)
+
+    # 1) p値列を用意
+    df['p_runs_val']   = pd.to_numeric(df['p_runs'],   errors='coerce')
+    df['p_markov_val'] = df['markov'].apply(lambda x: x.get('p_value') if isinstance(x, dict) else np.nan)
+    df['p_comp_val']   = pd.to_numeric(df['p_empirical'], errors='coerce')
+
+    # 2) 各検定群ごとに BH 法で補正 → フラグ列を作成
+    for src, flag in [
+        ('p_runs_val',   'runs_anomaly_fdr'),
+        ('p_markov_val', 'markov_anomaly_fdr'),
+        ('p_comp_val',   'comp_anomaly_fdr'),
+    ]:
+        pvals = df[src]
+        mask  = pvals.notna()
+        reject, _, _, _ = multipletests(pvals[mask], alpha=alpha, method='fdr_bh')
+        df.loc[mask, flag] = reject
+
+    # 3) （従来の未補正フラグも残す場合は以下）
+    df['runs_anomaly']   = df['p_runs_val']   < alpha
     df['markov_anomaly'] = df['p_markov_val'] < alpha
-    df['comp_anomaly'] = df['p_comp_val'] < alpha
+    df['comp_anomaly']   = df['p_comp_val']   < alpha
 
     # --- 第1層：全体サマリー（ダッシュボード） ---
     print("\n## 第1層：全体サマリー（異常度ダッシュボード）\n")
     
+    # --- 修正後（FDR フラグを集計）
     summary = df.groupby('index').agg(
-        runs_anomalies=('runs_anomaly', 'sum'),
-        markov_anomalies=('markov_anomaly', 'sum'),
-        comp_anomalies=('comp_anomaly', 'sum')
+        runs_anomalies   = ('p_runs_val_reject_fdr',   'sum'),
+        markov_anomalies = ('p_markov_val_reject_fdr', 'sum'),
+        comp_anomalies   = ('p_comp_val_reject_fdr',   'sum'),
     ).reset_index()
     
     summary['total_anomalies'] = summary.runs_anomalies + summary.markov_anomalies + summary.comp_anomalies
@@ -608,13 +722,70 @@ def generate_summary_report(all_game_results: list, alpha: float = 0.05):
         # 結果を整形
         report_df = pd.DataFrame()
         report_df['席'] = case_df['seat']
-        report_df['ランズ検定'] = case_df['p_runs_val'].apply(format_p_value)
-        report_df['マルコフ連鎖'] = case_df['p_markov_val'].apply(format_p_value)
-        report_df['構成(経験的p値)'] = case_df['p_comp_val'].apply(format_p_value)
-        
-        print(report_df.to_string(index=False))
+        report_df['ランズ検定(p値)'] = case_df['p_runs_val'].apply(format_p_value)
+        report_df['マルコフ連鎖(p値)'] = case_df['p_markov_val'].apply(format_p_value)  
+        # 構成偏りのp値と効果量(V)を並べて表示
+        report_df['構成(p値)'] = case_df['p_comp_val'].apply(format_p_value)
+        # 'cramers_v' 列がデータに含まれていることを前提とする
+        report_df['効果量(V)'] = case_df['cramers_v'].apply(lambda v: f"{v:.3f}" if pd.notna(v) else "N/A")
+        report_df['ランズ検定(FDR)']   = case_df['runs_anomaly_fdr'].map({True:'*', False:''})
+        report_df['マルコフ連鎖(FDR)'] = case_df['markov_anomaly_fdr'].map({True:'*', False:''})
+        report_df['構成偏り(FDR)']     = case_df['comp_anomaly_fdr'].map({True:'*', False:''})
+    
+        # 表示する列のリストを更新
+        display_columns = ['席', 'ランズ検定(p値)', 'マルコフ連鎖(p値)', '構成(p値)', '効果量(V)','ランズ検定(FDR)','マルコフ連鎖(FDR)','構成偏り(FDR)']
+        print(report_df[display_columns].to_string(index=False))
 
     print("\n" + "="*80)
+
+from statsmodels.stats.multitest import multipletests
+import numpy as np
+
+def apply_fdr_correction(df: pd.DataFrame, alpha: float = 0.05):
+    """
+    df 中の各 p 値列に Benjamini-Hochberg FDR 補正をかけ、
+    補正後 p 値と補正後も有意かのフラグ列を追加します。
+    """
+    # 補正対象の p 値列リスト
+    p_cols = ['p_runs_val', 'p_markov_val', 'p_comp_val']
+    
+    for col in p_cols:
+        if col not in df.columns:
+            continue
+
+        # NaN を除いた生 p 値配列
+        mask = df[col].notna()
+        orig_p = df.loc[mask, col].values
+        
+        if len(orig_p) == 0:
+            # 補正対象がなければフラグ列だけ作っておく
+            df[col + '_p_adj'] = np.nan
+            df[col + '_reject_fdr'] = False
+            continue
+        
+        # multipletests で補正
+        reject, pvals_corrected, _, _ = multipletests(orig_p, alpha=alpha, method='fdr_bh')
+        
+        # 補正後 p 値列
+        df.loc[mask, col + '_p_adj'] = pvals_corrected
+        # 補正後も有意かどうかのフラグ列
+        df.loc[mask, col + '_reject_fdr'] = reject
+
+    # レポート用に件数を表示するだけなら以下
+    num_before = int((df['p_runs_val']   < alpha).sum()
+                 + (df['p_markov_val'] < alpha).sum()
+                 + (df['p_comp_val']   < alpha).sum())
+    num_after  = int((df['p_runs_val_reject_fdr']   == True).sum()
+                 + (df['p_markov_val_reject_fdr'] == True).sum()
+                 + (df['p_comp_val_reject_fdr']   == True).sum())
+
+    print(f"--- 多重比較補正(FDR)結果 ---")
+    print(f"補正前の有意検定数 (p < {alpha}): {num_before} 件")
+    print(f"FDR補正後の有意検定数: {num_after} 件")
+    print("--------------------------")
+
+
+    return df
 
 # ==============================================================================
 # 実行
@@ -654,8 +825,7 @@ if __name__ == '__main__':
                 desc="処理中",           # 前につく説明文字列
                 unit="局",               # 単位表示（it, items, bytes…）
                 ncols=80,                # バーの幅（文字数）
-                ascii=True,             # True: ASCIIバー／False:Unicodeバー
-                leave=True 
+                ascii=True
                 )
          for index, row in pbar:
              tile_list_str = row['tile_List']          
