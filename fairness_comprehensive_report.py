@@ -95,7 +95,7 @@ def simulate_baseline(df, path='baseline_comparison.txt'):
         f.write(model.summary().as_text())
     return sims
 
-def save_report(df, path='final_report.csv'):
+def save_report(df, path='fairness_comprehensive_report.csv'):
     cols = [
         'index','name','seat','game_index','riichi_turn',
         'tsumo_counts','naki_counts','total_draw_counts',
@@ -138,4 +138,4 @@ def main():
     save_report(df)
 
 if __name__ == '__main__':
-    main(
+    main()
