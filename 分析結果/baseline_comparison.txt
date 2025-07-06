@@ -1,31 +1,31 @@
 Observed rate = 0.521
 Simulated rate = 0.050
-KL = 0.890
+KL = 0.891
 
 Regression on points_gained:
                             OLS Regression Results                            
 ==============================================================================
-Dep. Variable:          points_gained   R-squared:                       0.317
-Model:                            OLS   Adj. R-squared:                  0.061
-Method:                 Least Squares   F-statistic:                     1.238
-Date:                Sun, 06 Jul 2025   Prob (F-statistic):              0.358
-Time:                        12:49:44   Log-Likelihood:                -120.63
-No. Observations:                  12   AIC:                             249.3
-Df Residuals:                       8   BIC:                             251.2
+Dep. Variable:          points_gained   R-squared:                       0.370
+Model:                            OLS   Adj. R-squared:                  0.134
+Method:                 Least Squares   F-statistic:                     1.565
+Date:                Sun, 06 Jul 2025   Prob (F-statistic):              0.272
+Time:                        13:38:50   Log-Likelihood:                -120.14
+No. Observations:                  12   AIC:                             248.3
+Df Residuals:                       8   BIC:                             250.2
 Df Model:                           3                                         
 Covariance Type:            nonrobust                                         
 ========================================================================================
                            coef    std err          t      P>|t|      [0.025      0.975]
 ----------------------------------------------------------------------------------------
-Intercept             5139.0250    1.8e+04      0.286      0.782   -3.63e+04    4.66e+04
-p_runs               -2581.4446    1.1e+04     -0.234      0.821    -2.8e+04    2.28e+04
-cramers_v             5.138e+04   1.03e+05      0.497      0.633   -1.87e+05     2.9e+05
-riichi_turn_by_tsumo -1028.0399    645.482     -1.593      0.150   -2516.525     460.445
+Intercept            -2527.4358   1.77e+04     -0.143      0.890   -4.33e+04    3.83e+04
+p_runs                 210.7194   8098.349      0.026      0.980   -1.85e+04    1.89e+04
+cramers_v             9.367e+04   9.81e+04      0.955      0.368   -1.33e+05     3.2e+05
+riichi_turn_by_tsumo -1027.6876    634.961     -1.619      0.144   -2491.911     436.536
 ==============================================================================
-Omnibus:                        7.933   Durbin-Watson:                   2.729
-Prob(Omnibus):                  0.019   Jarque-Bera (JB):                4.255
-Skew:                           1.423   Prob(JB):                        0.119
-Kurtosis:                       3.645   Cond. No.                         549.
+Omnibus:                        3.766   Durbin-Watson:                   2.512
+Prob(Omnibus):                  0.152   Jarque-Bera (JB):                1.887
+Skew:                           0.971   Prob(JB):                        0.389
+Kurtosis:                       3.055   Cond. No.                         542.
 ==============================================================================
 
 Notes:
