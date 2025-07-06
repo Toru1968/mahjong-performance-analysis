@@ -1037,11 +1037,55 @@ class GameLogParser:
         if suit == 4: return f"{num}z"
         return f'UNK({code})'
 
-    def get_player_summary(self) -> dict:
+    def get_player_summary(self,kyoku_index) -> dict:
         if not self.log_data:
             return {}
 
-        player_names = self.data.get('name', [f'Player {i}' for i in range(4)])
+        player_names = ["", "", "", "", ""]
+        wind, kyoku, honba = parse_kyoku_index(kyoku_index)
+        if wind == '東':
+            if kyoku == 1:
+                player_names[0] = "Aさん"
+                player_names[1] = "Bさん"
+                player_names[2] = "Cさん"
+                player_names[3] = "Dさん"
+            elif kyoku == 2:
+                player_names[0] = "Bさん"
+                player_names[1] = "Cさん"
+                player_names[2] = "Dさん"
+                player_names[3] = "Aさん"
+            elif kyoku == 3:
+                player_names[0] = "Cさん"
+                player_names[1] = "Dさん"
+                player_names[2] = "Aさん"
+                player_names[3] = "Bさん"
+            elif kyoku == 4:
+                player_names[0] = "Dさん"
+                player_names[1] = "Aさん"
+                player_names[2] = "Bさん"
+                player_names[3] = "Cさん"
+        elif wind == '南':
+            if kyoku == 1:
+                player_names[0] = "Aさん"
+                player_names[1] = "Bさん"
+                player_names[2] = "Cさん"
+                player_names[3] = "Dさん"
+            elif kyoku == 2:
+                player_names[0] = "Bさん"
+                player_names[1] = "Cさん"
+                player_names[2] = "Dさん"
+                player_names[3] = "Aさん"
+            elif kyoku == 3:
+                player_names[0] = "Cさん"
+                player_names[1] = "Dさん"
+                player_names[2] = "Aさん"
+                player_names[3] = "Bさん"
+            elif kyoku == 4:
+                player_names[0] = "Dさん"
+                player_names[1] = "Aさん"
+                player_names[2] = "Bさん"
+                player_names[3] = "Cさん"
+
         summary = {}
 
         # --- ★ 変更点1: 局の最終結果を先に取得 ---
@@ -1134,7 +1178,7 @@ if __name__ == '__main__':
              tile_list_str = row['tile_List']
              gamelog_json = row['gamelog_json']
              parser = GameLogParser(gamelog_json)
-             initial_conditions = parser.get_player_summary()
+             initial_conditions = parser.get_player_summary(kyoku_id)
              wall_str = parse_tile_list_string(tile_list_str)
              wall = [to_int(t) for t in wall_str if t]
              analysis_output_for_one_game = analyze_hand_drawn_tile(kyoku_id,wall,analyze_str,initial_conditions)
