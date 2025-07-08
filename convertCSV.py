@@ -30,6 +30,19 @@ def string_to_tile_list(tile_str: str) -> list[str]:
     if not isinstance(tile_str, str) or len(tile_str) % 2 != 0: return []
     return [f"{tile_str[i]}{tile_str[i+1]}" for i in range(0, len(tile_str), 2)]
 
+def parse_kyoku_index(kyoku_index: str):
+    """
+    "東1-0" のような文字列を
+      wind   = "東"
+      kyoku  = 1   (局番号)
+      honba  = 0   (本場)
+    に分解して返す。
+    """
+    wind = kyoku_index[0]            # '東','南','西','北'
+    rest = kyoku_index[1:]           # "1-0"
+    kyoku_str, honba_str = rest.split('-')
+    return wind, int(kyoku_str), int(honba_str)
+
 # =================================================================
 # SECTION 2: ゲームログパーサー (ご指示に基づき修正)
 # =================================================================
@@ -116,68 +129,64 @@ def reconstruct_initial_wall(
     player_hands_copy = {p: list(hand) for p, hand in initial_hands_by_player.items()}
     # 1. 4枚ずつのブロックを3回繰り返す
     for i in range(3):
-        for player_idx in range(4): # 0:東, 1:南, 2:西, 3:北
-            if  dealer_id == 0:
-                haipai_block.extend(player_hands_copy[player_idx][:4])
-                player_hands_copy[player_idx] = player_hands_copy[player_idx][4:]
-            elif dealer_id == 1:
-                if player_idx == 0:
-                    haipai_block.extend(player_hands_copy[player_idx + 1][:4])
-                    player_hands_copy[player_idx + 1] = player_hands_copy[player_idx + 1][4:]
-                elif player_idx == 1:
-                    haipai_block.extend(player_hands_copy[player_idx + 1][:4])
-                    player_hands_copy[player_idx + 1] = player_hands_copy[player_idx + 1][4:]
-                elif player_idx == 2:
-                    haipai_block.extend(player_hands_copy[player_idx + 1][:4])
-                    player_hands_copy[player_idx + 1] = player_hands_copy[player_idx + 1][4:]
-                else:
-                    haipai_block.extend(player_hands_copy[player_idx - 3][:4])
-                    player_hands_copy[player_idx - 3] = player_hands_copy[player_idx - 3][4:]
-            elif dealer_id == 2:
-                if player_idx == 0:
-                    haipai_block.extend(player_hands_copy[player_idx +2][:4])
-                    player_hands_copy[player_idx + 2] = player_hands_copy[player_idx +2][4:]
-                elif player_idx ==1:
-                    haipai_block.extend(player_hands_copy[player_idx + 2][:4])
-                    player_hands_copy[player_idx + 2] = player_hands_copy[player_idx + 2][4:]
-                else:
-                    haipai_block.extend(player_hands_copy[player_idx - 2][:4])
-                    player_hands_copy[player_idx - 2] = player_hands_copy[player_idx - 2][4:]
-
-            elif dealer_id == 3:
-               if player_idx == 0:
-                    haipai_block.extend(player_hands_copy[player_idx +3][:4])
-                    player_hands_copy[player_idx + 3] = player_hands_copy[player_idx +3][4:]
-               else:
-                    haipai_block.extend(player_hands_copy[player_idx - 1][:4])
-                    player_hands_copy[player_idx - 1] = player_hands_copy[player_idx -1][4:]
+         if dealer_id == 1:
+             haipai_block.extend(player_hands_copy[0][:4])
+             player_hands_copy[0] = player_hands_copy[0][4:]
+             haipai_block.extend(player_hands_copy[1][:4])
+             player_hands_copy[1] = player_hands_copy[1][4:]
+             haipai_block.extend(player_hands_copy[2][:4])
+             player_hands_copy[2] = player_hands_copy[2][4:]
+             haipai_block.extend(player_hands_copy[3][:4])
+             player_hands_copy[3] = player_hands_copy[3][4:]
+         if dealer_id == 2:
+             haipai_block.extend(player_hands_copy[1][:4])
+             player_hands_copy[1] = player_hands_copy[1][4:]
+             haipai_block.extend(player_hands_copy[2][:4])
+             player_hands_copy[2] = player_hands_copy[2][4:]
+             haipai_block.extend(player_hands_copy[3][:4])
+             player_hands_copy[3] = player_hands_copy[3][4:]
+             haipai_block.extend(player_hands_copy[0][:4])
+             player_hands_copy[0] = player_hands_copy[0][4:]
+         if dealer_id == 3:
+             haipai_block.extend(player_hands_copy[2][:4])
+             player_hands_copy[2] = player_hands_copy[2][4:]
+             haipai_block.extend(player_hands_copy[3][:4])
+             player_hands_copy[3] = player_hands_copy[3][4:]
+             haipai_block.extend(player_hands_copy[0][:4])
+             player_hands_copy[0] = player_hands_copy[0][4:]
+             haipai_block.extend(player_hands_copy[1][:4])
+             player_hands_copy[1] = player_hands_copy[1][4:]
+         if dealer_id == 4:
+             haipai_block.extend(player_hands_copy[3][:4])
+             player_hands_copy[3] = player_hands_copy[3][4:]
+             haipai_block.extend(player_hands_copy[0][:4])
+             player_hands_copy[0] = player_hands_copy[0][4:]
+             haipai_block.extend(player_hands_copy[1][:4])
+             player_hands_copy[1] = player_hands_copy[1][4:]
+             haipai_block.extend(player_hands_copy[2][:4])
+             player_hands_copy[2] = player_hands_copy[2][4:]
 
      # 2. 最後の1枚を各プレイヤーから追加
-    for player_idx in range(4):
-        if dealer_id == 0:
-            if player_hands_copy[player_idx]:
-               haipai_block.append(player_hands_copy[player_idx].pop(0)) 
-        elif dealer_id == 1:
-            if player_idx == 0:
-               if player_hands_copy[player_idx + 3]:
-                  haipai_block.append(player_hands_copy[player_idx + 3].pop(0)) 
-            else:
-               if player_hands_copy[player_idx - 1]:
-                  haipai_block.append(player_hands_copy[player_idx - 1].pop(0)) 
-        elif dealer_id == 2:
-            if player_idx <= 1:
-               if player_hands_copy[player_idx + 2]:
-                  haipai_block.append(player_hands_copy[player_idx + 2].pop(0)) 
-            else:
-               if player_hands_copy[player_idx - 2]:
-                  haipai_block.append(player_hands_copy[player_idx - 2].pop(0)) 
-        elif dealer_id == 3:
-            if player_idx <= 2:
-               if player_hands_copy[player_idx + 1]:
-                  haipai_block.append(player_hands_copy[player_idx + 1].pop(0)) 
-            else:
-               if player_hands_copy[player_idx - 3]:
-                  haipai_block.append(player_hands_copy[player_idx - 3].pop(0))
+    if dealer_id == 1:
+         haipai_block.append(player_hands_copy[0].pop(0)) 
+         haipai_block.append(player_hands_copy[1].pop(0)) 
+         haipai_block.append(player_hands_copy[2].pop(0)) 
+         haipai_block.append(player_hands_copy[3].pop(0)) 
+    if dealer_id == 2:
+         haipai_block.append(player_hands_copy[1].pop(0)) 
+         haipai_block.append(player_hands_copy[2].pop(0)) 
+         haipai_block.append(player_hands_copy[3].pop(0)) 
+         haipai_block.append(player_hands_copy[0].pop(0)) 
+    if dealer_id == 3:
+         haipai_block.append(player_hands_copy[2].pop(0)) 
+         haipai_block.append(player_hands_copy[3].pop(0)) 
+         haipai_block.append(player_hands_copy[0].pop(0)) 
+         haipai_block.append(player_hands_copy[1].pop(0)) 
+    if dealer_id == 4:
+         haipai_block.append(player_hands_copy[3].pop(0)) 
+         haipai_block.append(player_hands_copy[0].pop(0)) 
+         haipai_block.append(player_hands_copy[1].pop(0)) 
+         haipai_block.append(player_hands_copy[2].pop(0)) 
 
     try:
         # 3. 復元した配牌ブロックと、残りの牌山を結合
@@ -220,7 +229,7 @@ if __name__ == '__main__':
 
             # === ここで修正したパーサーを使用 ===
             parser = GameLogParser(gamelog_json_str)
-            dealer_id = parser.get_kyoku_id() % 4
+            wind,dealer_id,honba = parse_kyoku_index(row.get('game_ID', ''))
 
             # 全プレイヤーの配牌をコードで取得
             initial_hands_codes = parser.get_initial_hands_as_codes()
