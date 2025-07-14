@@ -10,24 +10,7 @@ CSVファイル[game_records.csv]の作成
 この部分を補完するためのツールconvertCSV.pyを利用する。
 このツールはgame_records_bak.csvの形で不完全な牌山データを張り付けて置くとgame_records.csvを作成してくれる。
 
-分析ツール[analyzed_report.py]の実行と[analyzed_report.csv]出力
+分析ツール[analyzed_report.py]の実行と[analyzed_report.csv]出力とanalysis_report[対局日時].txtを出力
 ※game_records.csvが必要です。
 
-２次分析ツール[fairness_comprehensive_report.py]の実行と[fairness_comprehensive_report.csv]の出力
-※analyzed_report.csvが必要です。
-
-最終分析ツール[final_report.py]の実行と[final_report.csv]他の出力
-※fairness_comprehensive_report.csvが必要です。
-
-1. 	pca_isoforest.png
-• 	赤点（anomaly_flag = -1）が数点あれば、牌山偏りの強い局面。
-2. 	dbscan_eps_selection.png
-• 	折れ曲がり点から適切な  を決定。
-3. 	cusum.png
-• 	CUSUM が閾値（たとえば3）を超える領域は、偏りが累積した「疑わしい連続局」。
-4. 	baseline_comparison.txt
-• 	Observed rate が 0.05 を超えていれば、偏り検知率が期待値を上回っている証拠。
-• 	回帰結果で  points_gained とp_runs  などの係数が有意なら、偏りが得点に直結している可能性。
-5. 	final_report.csv
-• 	PC1,PC2,anomaly_flag,CUSUM,kmeans,dbscan,hmm_stateの可視化
 
