@@ -1,0 +1,168 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+from sklearn.cluster import KMeans
+import argparse
+
+# --- Analysis Core Functions ---
+
+def preprocess_and_analyze(df_in):
+    """
+    Adds analysis columns (anomaly_flag, kmeans_cluster) to the dataframe.
+    This is a core part of our methodology.
+    """
+    df = df_in.copy()
+    
+    # Define features for unsupervised analysis
+    feats = [
+        'p_runs', 'markov_p', 'p_empirical',
+        'entropy_bits', 'cramers_v', 'riichi_turn',
+        'tsumo_counts', 'naki_counts'
+    ]
+    
+    X = df[feats].to_numpy()
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # K-Means Clustering (k=3 as decided)
+    km = KMeans(n_clusters=3, random_state=42, n_init=10)
+    df['kmeans_cluster'] = km.fit_predict(X_scaled)
+    
+    # Isolation Forest (contamination=0.1 as decided)
+    iso = IsolationForest(contamination=0.1, random_state=42)
+    df['anomaly_flag'] = iso.fit_predict(X_scaled)
+    
+    return df
+
+def analyze_per_player_bias(df_analyzed):
+    """
+    Groups the analyzed data by player to find biases and returns a summary DataFrame.
+    """
+    grouped = df_analyzed.groupby('name')
+    summary_list = []
+    for name, group in grouped:
+        total_hands = len(group)
+        anomaly_hands = (group['anomaly_flag'] == -1).sum()
+        anomaly_rate = anomaly_hands / total_hands
+        
+        kmeans_dist = group['kmeans_cluster'].value_counts(normalize=True).to_dict()
+        
+        summary_list.append({
+            'プレイヤー名': name,
+            '担当局数': total_hands,
+            '異常検知された局数': anomaly_hands,
+            '異常検知率': f"{anomaly_rate:.1%}",
+            'クラスタ0割合': f"{kmeans_dist.get(0, 0):.1%}",
+            'クラスタ1割合': f"{kmeans_dist.get(1, 0):.1%}",
+            'クラスタ2割合': f"{kmeans_dist.get(2, 0):.1%}"
+        })
+    return pd.DataFrame(summary_list)
+
+# --- Simulation Data Generation Function ---
+
+def create_simulation_data(num_players, hands_per_player, biased_player=None, seed=42):
+    """
+    Generates simulated feature data for a Mahjong game.
+    If biased_player is specified, that player gets different feature distributions.
+    """
+    np.random.seed(seed) # for reproducibility
+    player_names = [f'{chr(65+i)}さん' for i in range(num_players)] # Aさん, Bさん, ...
+    total_hands = num_players * hands_per_player
+    
+    # Base features drawn from a standard normal distribution
+    data = {
+        'p_runs': np.random.randn(total_hands),
+        'markov_p': np.random.randn(total_hands),
+        'p_empirical': np.random.randn(total_hands),
+        'entropy_bits': np.random.randn(total_hands),
+        'cramers_v': np.random.randn(total_hands),
+        'riichi_turn': np.random.randn(total_hands),
+        'tsumo_counts': np.random.randn(total_hands),
+        'naki_counts': np.random.randn(total_hands),
+        'name': np.repeat(player_names, hands_per_player)
+    }
+    df = pd.DataFrame(data)
+    
+    if biased_player:
+        # Introduce bias for the specified player to simulate "hell mode"
+        # A "hell mode" pattern could be high entropy (hands don't come together)
+        # and low p_empirical (empirical probability of winning is low).
+        bias_indices = df['name'] == biased_player
+        
+        # High entropy (mean shifted from 0 to +1.5)
+        df.loc[bias_indices, 'entropy_bits'] = np.random.normal(loc=1.5, scale=1, size=hands_per_player)
+        
+        # Low p_empirical (mean shifted from 0 to -1.5)
+        df.loc[bias_indices, 'p_empirical'] = np.random.normal(loc=-1.5, scale=1, size=hands_per_player)
+        
+    return df
+
+def main():
+    """
+    Main function to run the simulations and print the reports.
+    """
+    parser = argparse.ArgumentParser(
+        description='Run simulation to validate the fairness analysis methodology.',
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('--hands', type=int, default=200, help='Number of hands per player in the simulation.')
+    args = parser.parse_args()
+
+    print("="*60)
+    print("擬似データを用いた分析手法の有効性検証")
+    print("="*60)
+    print(f"1プレイヤーあたりの局数: {args.hands}\\n")
+
+
+    # 1. Analyze FAIR data
+    print("--- 1. 「完全に公平なデータ」での検証結果 ---")
+    print("全プレイヤーが統計的に同じ条件のデータを分析します。")
+    print("期待される結果: 各プレイヤーのクラスター割合に大きな差は出ない。")
+    
+    df_fair = create_simulation_data(num_players=4, hands_per_player=args.hands, biased_player=None)
+    df_fair_analyzed = preprocess_and_analyze(df_fair)
+    summary_fair = analyze_per_player_bias(df_fair_analyzed)
+    print(summary_fair.to_string(index=False))
+    print("\\n" + "-"*60 + "\\n")
+
+    # 2. Analyze BIASED data
+    print("--- 2. 「意図的に偏らせたデータ」での検証結果 ---")
+    print("Aさんだけが統計的に不利な状況になるように操作したデータを分析します。")
+    print("期待される結果: Aさんのクラスター割合が、他のプレイヤーと明らかに異なる。")
+
+    df_biased = create_simulation_data(num_players=4, hands_per_player=args.hands, biased_player='Aさん')
+    df_biased_analyzed = preprocess_and_analyze(df_biased)
+    summary_biased = analyze_per_player_bias(df_biased_analyzed)
+    print(summary_biased.to_string(index=False))
+    print("\\n" + "="*60)
+    print("検証完了")
+
+
+# --- ノートブックで実行するためのコード ---
+
+# シミュレーションする局数をここで設定します
+hands_to_simulate = 200
+
+print("="*60)
+print("擬似データを用いた分析手法の有効性検証")
+print("="*60)
+print(f"1プレイヤーあたりの局数: {hands_to_simulate}\\n")
+
+
+# 1. 「公平なデータ」の分析を実行
+print("--- 1. 「完全に公平なデータ」での検証結果 ---")
+df_fair = create_simulation_data(num_players=4, hands_per_player=hands_to_simulate, biased_player=None)
+df_fair_analyzed = preprocess_and_analyze(df_fair)
+summary_fair = analyze_per_player_bias(df_fair_analyzed)
+print(summary_fair.to_string(index=False))
+print("\\n" + "-"*60 + "\\n")
+
+# 2. 「偏らせたデータ」の分析を実行
+print("--- 2. 「意図的に偏らせたデータ」での検証結果 ---")
+df_biased = create_simulation_data(num_players=4, hands_per_player=hands_to_simulate, biased_player='Aさん')
+df_biased_analyzed = preprocess_and_analyze(df_biased)
+summary_biased = analyze_per_player_bias(df_biased_analyzed)
+print(summary_biased.to_string(index=False))
+print("\\n" + "="*60)
+print("検証完了")
