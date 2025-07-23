@@ -351,7 +351,7 @@ def verify_odd_even_bias(wall_after_haipai: list[int], num_draws_to_check: int =
     n_suited_tiles = len(numbers)
     # 検定に十分なサンプルサイズがあるか確認
     if n_suited_tiles < 10:
-        return 0
+        return 99
 
     # 奇数(1,3,5,7,9)の数をカウント
     n_odds = sum(1 for num in numbers if num % 2 != 0)
@@ -400,6 +400,53 @@ def verify_MonteCarloSimulation_randomness(obs_real: list[int]):
     # --- 変更点 4: 最終結果の計算と表示 ---
     # シミュレーション結果の中から、観測値以上のχ²値がどれくらいの割合で出現したか（経験的p値）を計算
     p_empirical = sum(c >= chi2_obs for c in chi2_sims) / n_sims
+
+    return p_empirical
+
+def verify_MonteCarloSimulation_randomness_optimized(obs_real: list[int]):
+    """
+    モンテカルロシミュレーションの高速化版。
+    NumPyのベクトル演算を利用してループを排除し、高速化を図る。
+    
+    Args:
+        obs_real (list[int]): 観測された各牌の枚数のリスト (34要素)。
+        
+    Returns:
+        float: 計算された経験的p値。
+    """
+    # 牌の種類数
+    n_categories = 34
+
+    # シミュレーション設定
+    n_tiles = 31      # 検証する牌の枚数 (13枚 + 18枚)
+    n_sims = 10000    # シミュレーション回数
+
+    # 期待値の計算 (各種類の牌は136枚中に4枚)
+    exp_count_per_category = n_tiles * (4 / 136)
+    f_exp_array = np.full(n_categories, exp_count_per_category)
+
+    # 観測データのカイ二乗値（χ²値）を計算
+    chi2_obs, _ = chisquare(np.array(obs_real), f_exp=f_exp_array)
+
+    # --- 高速化の核心部分 ---
+    
+    # 1. 多変量超幾何分布を用いて、n_sims回のシミュレーションを一度に実行
+    # deck_counts: 各種類の牌の枚数の配列 (34種類、各4枚)
+    deck_counts = np.full(n_categories, 4)
+    
+    # NumPyの乱数生成器を初期化
+    rng = np.random.default_rng()
+    
+    # n_sims回のドロー結果 (観測度数) を一度に生成する
+    # obs_simsの形状は (n_sims, n_categories) となる
+    obs_sims = rng.multivariate_hypergeometric(deck_counts, n_tiles, size=n_sims)
+    
+    # 2. 各シミュレーションのカイ二乗値をベクトル演算で一括計算
+    # axis=1 を指定して、各シミュレーション（行ごと）の和を計算する
+    chi2_sims = np.sum((obs_sims - f_exp_array)**2 / f_exp_array, axis=1)
+
+    # 経験的p値を計算 (観測値以上のχ²値が出現した割合)
+    p_empirical = np.sum(chi2_sims >= chi2_obs) / n_sims
 
     return p_empirical
 
@@ -458,6 +505,7 @@ def random_analyze_hand_drawn_tile(wall_ints):
     各プレイヤーの初期手牌とツモ牌リストを生成し、
     分析関数が期待する「文字列リスト」形式で返す。
     """
+    analyzed_results = []
     return_value = 0
     alpha = 0.0025
     # --- 配牌とツモリストの生成 ---
@@ -522,11 +570,34 @@ def random_analyze_hand_drawn_tile(wall_ints):
          player = players[i]
          player_hand_draws_int = player['hand_draws']
          p_runs = verify_sequence_randomness(player_hand_draws_int)
-         
-         if p_runs < alpha:
-             return_value = 1
+         obs_real = convert_tile_counts_34([to_str(t) for t in(player_hand_draws_int)])
+         p_empirical = verify_MonteCarloSimulation_randomness_optimized(obs_real)
+         p_value = verify_odd_even_bias(player_draw_int)
+         entropy_result = analyze_conditional_entropy(player_hand_draws_int)
+         markov_result = analyze_markov_chain(player_hand_draws_int)
+         obs_counts = convert_tile_counts_34([to_str(t) for t in player_hand_draws_int])
+         exp_counts = [len(player_hand_draws_int) * (4 / 136)] * 34
+         comp_res = analyze_composition_monte_carlo(obs_counts, len(player_hand_draws_int))
+         comp_res['cramers_v'] = calculate_cramers_v(obs_counts, exp_counts)
 
-    return return_value
+         analyzed_results.append({
+             "index":              '-',
+             "name":               '-',
+             "seat":               '-',
+             "p_runs":             p_runs,
+             "p_empirical":        p_empirical,
+             "p_value":            p_value,
+             "entropy":            entropy_result,
+             "markov":             markov_result,
+             "cramers_v":          comp_res['cramers_v'],
+             "riichi_turn":        -1,
+             "tsumo_counts":       -1,
+             "naki_counts":        -1,
+             "total_draw_counts":  -1,
+             "tsumogiri_count":    -1,
+             "points_gained":       0
+         })
+    return analyzed_results
 
 def analyze_hand_drawn_tile(kyoku_index,wall_ints,analyze_str,player_data):
     """
@@ -651,7 +722,7 @@ def analyze_hand_drawn_tile(kyoku_index,wall_ints,analyze_str,player_data):
          player_draw_int = seat['draws']
          p_runs = verify_sequence_randomness(player_hand_draws_int)
          obs_real = convert_tile_counts_34([to_str(t) for t in(player_hand_draws_int)])
-         p_empirical = verify_MonteCarloSimulation_randomness(obs_real)
+         p_empirical = verify_MonteCarloSimulation_randomness_optimized(obs_real)
          p_value = verify_odd_even_bias(player_draw_int)
          entropy_result = analyze_conditional_entropy(player_hand_draws_int)
          markov_result = analyze_markov_chain(player_hand_draws_int)
@@ -1165,22 +1236,42 @@ class Final_Analysis_results:
         """
         grouped = df_analyzed.groupby('name')
         summary_list = []
+        kmeans_cluster_list_df = []
 
         for name, group in grouped:
             total_hands = len(group)
             anomaly_hands = (group['anomaly_flag'] == -1).sum()
             anomaly_rate = anomaly_hands / total_hands
             k_dist = group['kmeans_cluster'].value_counts(normalize=True).to_dict()
+            kmeans_cluster_list = []
+            for label in group['kmeans_cluster']:
+               if label == 1:
+                   kmeans_cluster_list.append(1)
+               elif label == 2:
+                   kmeans_cluster_list.append(2)
+               else:
+                   kmeans_cluster_list.append(0)
+
+            kmeans_cluster_list_df.append({
+                'player_id': name,
+                'cluster_label_list': kmeans_cluster_list
+            })
 
             summary_list.append({
                 'プレイヤー名': name,
                 '担当局数': total_hands,
                 '異常検知された局数': anomaly_hands,
+                'クラスタリスト': kmeans_cluster_list,
                 '異常検知率': f"{anomaly_rate:.1%}",
                 'クラスタ0割合': f"{k_dist.get(0, 0):.1%}",
                 'クラスタ1割合': f"{k_dist.get(1, 0):.1%}",
                 'クラスタ2割合': f"{k_dist.get(2, 0):.1%}"
             })
+
+        df_sample = pd.DataFrame(kmeans_cluster_list_df)
+
+        analyzer = FairnessAnalyzerDF(df_sample)
+        analyzer.run_all(plot_path='rate_ci_plot.png')
 
         return pd.DataFrame(summary_list)
 
@@ -1226,10 +1317,113 @@ class Final_Analysis_results:
         print(f"[完了] レポートを '{output_path}' に保存しました。")
 
 # ==============================================================================
+# 各プレイヤーの悪形遭遇率
+# ==============================================================================
+import numpy as np
+import pandas as pd
+import japanize_matplotlib    # ← これだけで日本語OK
+from statsmodels.sandbox.stats.runs import runstest_1samp
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class FairnessAnalyzerDF:
+    """
+    player_id, cluster_label_list のDataFrameから
+    悪形遭遇率のブートCI＋Runs検定＋可視化を行うクラス。
+    """
+
+    def __init__(self, df: pd.DataFrame,
+                 baseline: float = 0.411,
+                 n_boot: int = 10000,
+                 alpha: float = 0.05):
+        self.df = df.copy()
+        self.baseline = baseline
+        self.n_boot = n_boot
+        self.alpha = alpha
+        self.results = None
+
+    def bootstrap_ci(self, arr: np.ndarray):
+        boots = [
+            np.mean(np.random.choice(arr, size=arr.size, replace=True))
+            for _ in range(self.n_boot)
+        ]
+        lo, hi = np.percentile(
+            boots,
+            [100 * self.alpha / 2, 100 * (1 - self.alpha / 2)]
+        )
+        return lo, hi
+
+    def safe_runs_test(self, arr: np.ndarray):
+        # 全0 or 全1 を除外
+        if arr.mean() in (0.0, 1.0):
+            return np.nan, 1.0
+        return runstest_1samp(arr)
+
+    def analyze(self):
+        """各プレイヤーの遭遇率・CI・Runs検定結果をまとめる"""
+        records = []
+        for _, row in self.df.iterrows():
+            pid = row['player_id']
+            labels = np.array(row['cluster_label_list'], dtype=int)
+            bin_labels = (labels == 1).astype(int)
+
+            obs = bin_labels.mean()
+            ci_lo, ci_hi = self.bootstrap_ci(bin_labels)
+            _, p_runs = self.safe_runs_test(bin_labels)
+
+            records.append({
+                'player': pid,
+                'n_games': bin_labels.size,
+                'obs_rate': obs,
+                'ci_low': ci_lo,
+                'ci_high': ci_hi,
+                'runs_pval': p_runs,
+                'diff_from_baseline': obs - self.baseline
+            })
+
+        self.results = pd.DataFrame(records)
+
+    def plot(self, out_path: str = 'rate_ci_plot.png'):
+        """遭遇率＋95%CIを可視化してPNG保存"""
+        if self.results is None:
+            raise RuntimeError("まず analyze() を実行してください。")
+
+        plt.figure(figsize=(6, 4))
+        sns.pointplot(
+            x='player', y='obs_rate',
+            data=self.results,
+            capsize=0.2, color='blue', linestyle='none'
+        )
+        x = np.arange(len(self.results))
+        y = self.results['obs_rate']
+        yerr = np.vstack([
+            y - self.results['ci_low'],
+            self.results['ci_high'] - y
+        ])
+        plt.errorbar(x, y, yerr=yerr, fmt='none',
+                     ecolor='black', capsize=4)
+        plt.axhline(self.baseline, color='red', linestyle='--',
+                    label=f'Baseline={self.baseline:.3f}')
+        plt.title('悪形遭遇率と95%ブートストラップCI')
+        plt.ylabel('遭遇率 (cluster=1)')
+        plt.ylim(0, 1)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+        print(f'{out_path} を出力しました')
+
+    def run_all(self, plot_path: str = 'rate_ci_plot.png'):
+        """analyze→結果表示→plot を一度に実行"""
+        self.analyze()
+        print(self.results.to_string(index=False))
+        self.plot(out_path=plot_path)
+
+# ==============================================================================
 # 実行
 # ==============================================================================
 if __name__ == '__main__':
-     num_iterations = 10000 # 例として1000回に設定
+     num_iterations = 100 # 例として1000回に設定
      analyze_str = ""
      kyoku_id = ""
 
@@ -1249,11 +1443,11 @@ if __name__ == '__main__':
            if wall_ints is None:
                print(f"Iteration {i + 1}: エラー: 牌山の生成に失敗しました。スキップします。")
                continue # 次の繰り返しに進む
-           total_iterations =  total_iterations + random_analyze_hand_drawn_tile(wall_ints)
+           analysis_output_for_one_game = random_analyze_hand_drawn_tile(wall_ints)
+           all_results.append(analysis_output_for_one_game)
 
-           # ループ完了後の処理（必要に応じて）
-           print(f"\nAnalysis for {total_iterations / num_iterations} iterations.")
-           print(f"{analyze_str}")
+        generate_summary_report(all_results)
+        all_results_df = save_csv(all_results)
 
      else:
          analyze_str = "csv"
@@ -1267,7 +1461,6 @@ if __name__ == '__main__':
                 )
          for index, row in pbar:
              date_info = row['game_date']
-             #player_info = row['player_info']
              kyoku_id = row['game_ID']
              tile_list_str = row['tile_List']
              wall_str = parse_tile_list_string(tile_list_str)
