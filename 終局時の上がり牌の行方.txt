@@ -1,0 +1,93 @@
+import pandas as pd
+import re
+from collections import Counter
+
+# --- ★★★ 新しいヘルパー関数 ★★★ ---
+def convert_string_tile_to_int(tile_str: str) -> int or None:
+    """ '4m' -> 14, '5p' -> 25, '7z' -> 47 のように変換する """
+    if not isinstance(tile_str, str) or len(tile_str) < 2: return None
+    
+    num_part = tile_str[:-1]
+    suit_part = tile_str[-1]
+
+    if not num_part.isdigit(): return None
+    
+    num = int(num_part)
+    base = 0
+    if suit_part == 'm': base = 10
+    elif suit_part == 'p': base = 20
+    elif suit_part == 's': base = 30
+    elif suit_part == 'z': base = 40
+    else: return None
+    
+    return base + num
+
+def parse_hand_string_to_int_list(hand_str: str) -> list[int]:
+    """ '4m,5m,6m' のような文字列を [14, 15, 16] のようなリストに変換する """
+    if not isinstance(hand_str, str) or hand_str == 'nan':
+        return []
+    
+    tile_strings = hand_str.split(',')
+    return [val for ts in tile_strings if (val := convert_string_tile_to_int(ts)) is not None]
+
+def parse_waits(waits_str):
+    """ '34(s:1...)|37(s:0...)' から [34, 37] を抽出 """
+    if not isinstance(waits_str, str): return []
+    return [int(tile) for tile in re.findall(r'(\d+)\(', waits_str)]
+
+# --- メインの分析関数 (修正版) ---
+def analyze_wait_absorption_final(df: pd.DataFrame):
+    print("--- 仮説検証：実らなかった聴牌の待ち牌は、勝者に吸収されていたか？ ---")
+
+    try:
+        # ★★★ 新しいパース関数を使用 ★★★
+        df['waits'] = df['waits_list'].astype(str).apply(parse_waits)
+        df['hand_list'] = df['final_hand'].astype(str).apply(parse_hand_string_to_int_list)
+        df['melds_list'] = df['fuuro_list'].astype(str).apply(parse_hand_string_to_int_list)
+
+        total_unlucky_tenpai_cases = 0
+        absorption_cases = 0
+        
+        for kyoku_id, round_df in df.groupby('kyoku_id'):
+            winner_df = round_df[round_df['points_gained'] > 0]
+            unlucky_tenpai_df = round_df[(round_df['final_shanten'] == 0) & (round_df['points_gained'] <= 0)]
+
+            if winner_df.empty or unlucky_tenpai_df.empty:
+                continue
+
+            winner_row = winner_df.iloc[0]
+            winner_hand = set(winner_row['hand_list'] + winner_row['melds_list'])
+
+            # 勝者の手牌が正しく読み込めているか確認
+            if not winner_hand:
+                print(f"警告: 局ID {kyoku_id} で勝者の手牌が空です。スキップします。")
+                continue
+
+            for idx, tenpai_player in unlucky_tenpai_df.iterrows():
+                total_unlucky_tenpai_cases += 1
+                player_waits = tenpai_player['waits']
+                
+                if not player_waits:
+                    continue
+                
+                if any(wait_tile in winner_hand for wait_tile in player_waits):
+                    absorption_cases += 1
+        
+        print("\n--- 分析結果 ---")
+        if total_unlucky_tenpai_cases > 0:
+            absorption_rate = (absorption_cases / total_unlucky_tenpai_cases) * 100
+            print(f"分析対象となった「実らなかった聴牌」の総事例数: {total_unlucky_tenpai_cases} 件")
+            print(f"うち、待ち牌が和了者の手の中にあった事例数: {absorption_cases} 件")
+            print(f"待ち牌吸収率: {absorption_rate:.2f} %")
+        else:
+            print("分析対象となる「実らなかった聴牌」の事例がログにありませんでした。")
+
+    except Exception as e:
+        print(f"分析中にエラーが発生しました: {e}")
+
+# --- 実行 ---
+try:
+    df = pd.read_csv('mahjong_log.csv')
+    analyze_wait_absorption_final(df)
+except FileNotFoundError:
+    print("エラー: 'mahjong_log.csv' が見つかりません。")
