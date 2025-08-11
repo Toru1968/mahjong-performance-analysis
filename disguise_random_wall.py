@@ -202,10 +202,10 @@ def random_hand_tile(wall_ints):
 
     for i in range(4):
          player = players[i]
-         player_hand_int = player['hand']
-         player_draws_int = player['draws']
-         random.shuffle(player_hand_int)
-         random.shuffle(player_draws_int)
+         player_tiles_int = player['hand_draws']
+         random.shuffle(player_tiles_int)
+         player_hand_int = player_tiles_int[:13]
+         player_draws_int = player_tiles_int[13:]
 
          hand_results.append({
              "seat"      :          player['seat'], # Changed 'name' to 'seat' to match the logic in mahjong_verification_logic
@@ -216,19 +216,7 @@ def random_hand_tile(wall_ints):
     random.shuffle(current_wall)
 
     return current_wall,hand_results
-
-# ==============================================================================
-# --- メイン処理 ---
-# ==============================================================================
-def analyze_report():
-    """CSVファイルを読み込み、向聴数の進捗を分析する"""
-
-
-
-    string_representation = convert_to_string_representation(all_results)
-
-    return string_representation
-    
+   
 # ==============================================================================
 # --- 実行部 ---
 # ==============================================================================
