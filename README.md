@@ -1,2 +1,3 @@
 # mahjong-performance-analysis
-A quantitative analysis of luck factors (e.g., deal sequence bias, draw utility) and their impact on player performance in online mahjong.
+このリポジトリの目的は、健全なオンライン麻雀ゲームを運営する企業が公平性に対するユーザーからの謂れのない批判に対して、客観な観測方法を用いた調査研究の上で検定手法を確立し簡単に証明可能な環境を提供する事を目的としています。
+この研究は誰もがその根拠の妥当性に納得する必要があります。そのため麻雀、統計学、心理学で公平性評価に知見をお持ちの方を広く募集しております。ご協力をお願いいたします。
